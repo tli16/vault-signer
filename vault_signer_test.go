@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	signer "github.com/chrishoffman/vault-signer"
+	signer "github.com/tli16/vault-signer"
 	"github.com/google/uuid"
 	"github.com/hashicorp/vault/api"
 	"github.com/ory/dockertest"

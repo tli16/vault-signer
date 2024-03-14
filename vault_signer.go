@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"path"
 	"strings"
 
@@ -86,6 +87,39 @@ const (
 	SignatureAlgorithmRSAPSS      SignatureAlgorithm = "pss"
 	SignatureAlgorithmRSAPKCS1v15 SignatureAlgorithm = "pkcs1v15"
 )
+
+// NewVaultSigner creates a signer the leverages HashiCorp Vault's transit engine to sign
+// using Go's built in crypto.Signer interface.
+func NewVaultSignerWithCert(certPath string, vaultClient *api.Client, signerConfig *SignerConfig) (*VaultSigner, error) {
+	if vaultClient == nil {
+		return nil, errors.New("vault client is required")
+	}
+	if signerConfig == nil {
+		return nil, errors.New("signer config is required")
+	}
+	if signerConfig.MountPath == "" {
+		return nil, errors.New("key mount path is required")
+	}
+	if signerConfig.KeyName == "" {
+		return nil, errors.New("key name is required")
+	}
+
+	signer := &VaultSigner{
+		vaultClient:        vaultClient,
+		namespace:          signerConfig.Namespace,
+		mountPath:          signerConfig.MountPath,
+		keyName:            signerConfig.KeyName,
+		context:            signerConfig.Context,
+		signatureAlgorithm: signerConfig.SignatureAlgorithm,
+		hashAlgorithm:      signerConfig.HashAlgorithm,
+	}
+	if err := signer.retrieveKeyfromCert(certPath); err != nil {
+		return nil, err
+	}
+
+	return signer, nil
+}
+
 
 // NewVaultSigner creates a signer the leverages HashiCorp Vault's transit engine to sign
 // using Go's built in crypto.Signer interface.
@@ -223,6 +257,28 @@ func (s *VaultSigner) Sign(_ io.Reader, digest []byte, signerOpts crypto.SignerO
 func (s *VaultSigner) Public() crypto.PublicKey {
 	return s.publicKey
 }
+
+func (s *VaultSigner) retrieveKeyfromCert(certPath string) error {
+
+    certPEM, err := ioutil.ReadFile(certPath)
+    if err != nil {
+        return fmt.Errorf("failed to read certificate file: %v", err)
+    }
+
+    block, _ := pem.Decode(certPEM)
+    if block == nil {
+        return fmt.Errorf("failed to parse certificate PEM")
+    }
+    cert, err := x509.ParseCertificate(block.Bytes)
+    if err != nil {
+        return fmt.Errorf("failed to parse certificate: %v", err)
+    }
+
+    s.publicKey = cert.PublicKey
+
+    return nil
+}
+
 
 func (s *VaultSigner) retrieveKey() error {
 	keyPath := s.buildKeyPath("keys")
